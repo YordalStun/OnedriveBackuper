@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>OnedriveBackuper</RootNamespace>
+    <Version>0.1.0</Version>
+    <!-- Needed by the source-generated P/Invoke stubs for the Cloud Files API. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="OnedriveBackuper.Tests" />
+  </ItemGroup>
+
+</Project>

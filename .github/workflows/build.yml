@@ -1,0 +1,35 @@
+name: Build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Test
+        run: dotnet test --configuration Release
+
+      - name: Publish (Windows x64)
+        run: dotnet publish src/OnedriveBackuper -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -p:DebugType=none -o publish/win-x64
+
+      - name: Publish (Windows ARM64)
+        run: dotnet publish src/OnedriveBackuper -c Release -r win-arm64 --self-contained -p:PublishSingleFile=true -p:EnableCompressionInSingleFile=true -p:DebugType=none -o publish/win-arm64
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: OnedriveBackuper-win-x64
+          path: publish/win-x64/OnedriveBackuper.exe
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: OnedriveBackuper-win-arm64
+          path: publish/win-arm64/OnedriveBackuper.exe
