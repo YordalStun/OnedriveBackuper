@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <AssemblyName>OnedriveBackuper</AssemblyName>
+    <RootNamespace>OnedriveBackuper.App</RootNamespace>
+    <UseWPF>true</UseWPF>
+    <!-- Only for the tray icon (NotifyIcon); WPF has none of its own. -->
+    <UseWindowsForms>true</UseWindowsForms>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OnedriveBackuper.Core\OnedriveBackuper.Core.csproj" />
+  </ItemGroup>
+
+</Project>

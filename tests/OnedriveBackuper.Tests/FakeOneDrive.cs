@@ -114,8 +114,12 @@ internal sealed class FakeOneDrive : ICloudFiles
         AfterHydrate(fullPath);
     }
 
+    /// <summary>Called when the backup asks to free up a file.</summary>
+    public Action<string> BeforeDehydrate { get; set; } = _ => { };
+
     public void Dehydrate(string fullPath)
     {
+        BeforeDehydrate(fullPath);
         var file = files[fullPath];
         if (file.Pinned)
         {
@@ -170,7 +174,7 @@ internal sealed class TestFolders : IDisposable
 
     private long FreeSpace(string path) => Paths.IsInside(path, OneDrive.Root) ? OneDrive.FreeSpace(path) : BackupDriveFree;
 
-    public BackupReport Backup(bool full = false, bool dryRun = false, long reserve = 0, string[]? exclude = null, CancellationToken cancel = default)
+    public BackupReport Backup(bool full = false, bool dryRun = false, long reserve = 0, string[]? exclude = null, CancellationToken cancel = default, BackupProgress? progress = null)
     {
         now = now.AddHours(1);
         var engine = new BackupEngine(OneDrive, new PendingFreeUps(PendingListPath), Log, new FixedTime(now), FreeSpace);
@@ -183,8 +187,14 @@ internal sealed class TestFolders : IDisposable
             ReserveBytes = reserve,
             Exclude = new PathFilter(exclude ?? []),
             FreeUpRetryDelays = [TimeSpan.Zero, TimeSpan.Zero],
+            Progress = progress,
         }, cancel);
     }
+
+    /// <summary>Moves the test clock forward, e.g. to make a full backup due.</summary>
+    public void Wait(TimeSpan span) => now = now.Add(span);
+
+    public DateTimeOffset Now => now;
 
     public string Restore(string? setId = null, string[]? only = null, bool overwrite = false, string? into = null)
     {

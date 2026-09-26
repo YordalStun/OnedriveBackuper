@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Globalization;
 using System.Reflection;
 using OnedriveBackuper.Core;
@@ -108,7 +107,7 @@ internal static class Commands
     {
         var a = Arguments.Parse(args, Set("full", "dry-run", "verbose"), Set("source", "exclude", "reserve", "free-method"));
         var backupFolder = Single(a, "<backup-folder>");
-        var source = a.Value("source") ?? DefaultOneDriveFolder()
+        var source = a.Value("source") ?? AppSettings.DetectOneDriveFolder()
             ?? throw new UsageException("Could not find your OneDrive folder. Tell me where it is with --source <folder>.");
         var method = a.Value("free-method")?.ToLowerInvariant() switch
         {
@@ -119,7 +118,7 @@ internal static class Commands
         };
 
         using var log = new ConsoleLog(output, errors, a.Has("verbose"));
-        var engine = new BackupEngine(CreateCloudFiles(method), new PendingFreeUps(pendingListPath), log);
+        var engine = new BackupEngine(CloudFiles.Create(method), new PendingFreeUps(pendingListPath), log);
         var report = engine.Run(new BackupOptions
         {
             SourceRoot = source,
@@ -194,7 +193,7 @@ internal static class Commands
         }
 
         using var log = new ConsoleLog(output, errors, a.Has("verbose"));
-        if (DefaultOneDriveFolder() is { } oneDrive && Paths.IsInside(target, oneDrive))
+        if (AppSettings.DetectOneDriveFolder() is { } oneDrive && Paths.IsInside(target, oneDrive))
         {
             log.Warn("You are restoring into your OneDrive folder, so OneDrive will upload the restored files.");
         }
@@ -260,163 +259,43 @@ internal static class Commands
         var a = Arguments.Parse(args, Set(), Set("reserve"));
         var root = a.Positional.Count switch
         {
-            0 => DefaultOneDriveFolder() ?? throw new UsageException("Could not find your OneDrive folder. Pass it: scan <folder>."),
+            0 => AppSettings.DetectOneDriveFolder() ?? throw new UsageException("Could not find your OneDrive folder. Pass it: scan <folder>."),
             1 => a.Positional[0],
             _ => throw new UsageException("scan takes at most one folder."),
         };
-        root = Path.GetFullPath(root);
-        if (!Directory.Exists(root))
-        {
-            throw new BackupException($"The folder does not exist: {root}");
-        }
         var reserve = a.Value("reserve") is { } r ? Format.ParseSize(r) : 1L << 30;
 
-        output.WriteLine($"Scanning {root} (this downloads nothing)...");
-        var cloud = CreateCloudFiles(FreeUpMethod.Auto);
-        var scan = SourceScanner.Scan(root, PathFilter.None);
-        var groups = scan.Files
-            .GroupBy(f => cloud.GetState(f.FullPath, f.Attributes).Describe())
-            .OrderBy(g => g.Key, StringComparer.Ordinal);
-        foreach (var group in groups)
+        output.WriteLine($"Scanning {Path.GetFullPath(root)} (this downloads nothing)...");
+        var overview = OneDriveOverview.Create(root, CloudFiles.Create(FreeUpMethod.Auto), reserve);
+        foreach (var group in overview.Groups)
         {
-            output.WriteLine($"  {group.Key,-48} {group.Count(),10:N0} files {Format.Size(group.Sum(f => f.Size)),10}");
+            output.WriteLine($"  {group.State,-48} {group.Files,10:N0} files {Format.Size(group.Bytes),10}");
         }
-        output.WriteLine($"  {"Total",-48} {scan.Files.Count,10:N0} files {Format.Size(scan.Files.Sum(f => f.Size)),10}");
-        foreach (var problem in scan.Problems)
+        output.WriteLine($"  {"Total",-48} {overview.TotalFiles,10:N0} files {Format.Size(overview.TotalBytes),10}");
+        foreach (var problem in overview.Problems)
         {
             output.WriteLine($"  Could not read {problem.Path}: {problem.Error}");
         }
 
-        var largest = scan.Files
-            .Where(f => cloud.GetState(f.FullPath, f.Attributes).IsOnlineOnly)
-            .MaxBy(f => f.Size);
-        var free = new DriveInfo(Path.GetPathRoot(root)!).AvailableFreeSpace;
         output.WriteLine();
-        output.WriteLine($"Free space on {Path.GetPathRoot(root)}: {Format.Size(free)}");
-        if (largest == null)
+        output.WriteLine($"Free space on {Path.GetPathRoot(overview.Root)}: {Format.Size(overview.FreeBytes)}");
+        if (overview.LargestOnlineOnly is not { } largest)
         {
             output.WriteLine("Nothing is online-only, so a backup does not need to download anything.");
             return Ok;
         }
-        var needed = largest.Size + reserve;
         output.WriteLine($"Largest online-only file: {largest.RelativePath} ({Format.Size(largest.Size)})");
-        output.WriteLine($"A backup needs {Format.Size(needed)} free (that file plus the {Format.Size(reserve)} reserve): " +
-                         (free >= needed ? "you have enough." : "you do NOT have enough; that file would be skipped."));
+        output.WriteLine($"A backup needs {Format.Size(overview.NeededBytes)} free (that file plus the {Format.Size(reserve)} reserve): " +
+                         (overview.EnoughSpace ? "you have enough." : "you do NOT have enough; that file would be skipped."));
         return Ok;
     }
 
     private static int Probe(string[] args, TextWriter output, string pendingListPath)
     {
         var a = Arguments.Parse(args, Set(), Set());
-        var path = Path.GetFullPath(Single(a, "<file>"));
-        if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 16299))
-        {
-            throw new BackupException("probe needs Windows 10 version 1709 or later.");
-        }
-        if (!File.Exists(path))
-        {
-            throw new BackupException($"File not found: {path}");
-        }
-
-        var before = new FileInfo(path);
-        var state = CloudFileState.FromAttributes(before.Attributes);
-        output.WriteLine($"File:        {path}");
-        output.WriteLine($"Size:        {Format.Size(before.Length)}, last changed {before.LastWriteTime:yyyy-MM-dd HH:mm:ss}");
-        output.WriteLine($"State:       {state.Describe()} (attributes 0x{(int)before.Attributes:X8})");
-        if (!state.IsOnlineOnly || state.IsPinned)
-        {
-            throw new BackupException("Pick a file that is online-only (cloud icon in Explorer) and not set to 'Always keep on this device'.");
-        }
-
-        var cloud = new WindowsCloudFiles(FreeUpMethod.Direct);
-        var pending = new PendingFreeUps(pendingListPath);
-        var allGood = true;
-        pending.Add(path);
-
-        output.Write("1. Download (CfHydratePlaceholder)... ");
-        var timer = Stopwatch.StartNew();
-        try
-        {
-            cloud.Hydrate(path);
-            output.WriteLine($"OK in {Format.Duration(timer.Elapsed)}. State now: {CurrentState(path)}");
-        }
-        catch (IOException ex)
-        {
-            output.WriteLine($"FAILED: {ex.Message}");
-            allGood = false;
-        }
-
-        output.Write("2. Read whole file (SHA-256)... ");
-        timer.Restart();
-        try
-        {
-            var hash = FileCopy.HashFile(path);
-            output.WriteLine($"OK in {Format.Duration(timer.Elapsed)}: {hash}");
-        }
-        catch (IOException ex)
-        {
-            output.WriteLine($"FAILED: {ex.Message}");
-            allGood = false;
-        }
-
-        output.Write("3. Free up space (CfUpdatePlaceholder DEHYDRATE)... ");
-        var freed = false;
-        try
-        {
-            cloud.DehydrateDirectly(path);
-            freed = true;
-            output.WriteLine($"OK. State now: {CurrentState(path)}");
-        }
-        catch (IOException ex)
-        {
-            output.WriteLine($"FAILED: {ex.Message}");
-            allGood = false;
-        }
-
-        if (!freed)
-        {
-            output.Write("3b. Free up space the Explorer way (unpin, wait for OneDrive)... ");
-            try
-            {
-                cloud.DehydrateByUnpinning(path);
-                freed = true;
-                output.WriteLine($"OK. State now: {CurrentState(path)}");
-                output.WriteLine("    -> Use --free-method unpin (or the default, auto) on this PC.");
-            }
-            catch (Exception ex) when (ex is IOException or TimeoutException)
-            {
-                output.WriteLine($"FAILED: {ex.Message}");
-            }
-        }
-        if (freed)
-        {
-            pending.Remove(path);
-        }
-
-        var after = new FileInfo(path);
-        var unchanged = after.Length == before.Length && after.LastWriteTimeUtc == before.LastWriteTimeUtc;
-        output.WriteLine($"4. Size and last-changed time untouched by all this: {(unchanged ? "yes" : "NO (incremental backups would re-copy files)")}");
-        allGood &= unchanged && freed;
-
-        output.WriteLine();
-        output.WriteLine(allGood
-            ? "Everything works on this PC."
-            : freed
-                ? "It works, but see the steps marked FAILED or NO above."
-                : "The file could not be freed up again. Right-click it in Explorer and choose 'Free up space'.");
-        return allGood ? Ok : FinishedWithProblems;
+        var path = Single(a, "<file>");
+        return Windows.Probe.Run(path, output, new PendingFreeUps(pendingListPath)) ? Ok : FinishedWithProblems;
     }
-
-    private static string CurrentState(string path) => CloudFileState.FromAttributes(File.GetAttributes(path)).Describe();
-
-    private static ICloudFiles CreateCloudFiles(FreeUpMethod method) =>
-        OperatingSystem.IsWindowsVersionAtLeast(10, 0, 16299) ? new WindowsCloudFiles(method) : new NoCloudFiles();
-
-    /// <summary>OneDrive sets these for the signed-in accounts (personal and work/school).</summary>
-    private static string? DefaultOneDriveFolder() =>
-        new[] { "OneDrive", "OneDriveConsumer", "OneDriveCommercial" }
-            .Select(Environment.GetEnvironmentVariable)
-            .FirstOrDefault(path => !string.IsNullOrEmpty(path) && Directory.Exists(path));
 
     private static string Single(Arguments a, string name) => a.Positional.Count switch
     {

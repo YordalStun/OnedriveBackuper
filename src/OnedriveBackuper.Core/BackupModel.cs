@@ -37,6 +37,9 @@ public sealed class SetInfo
     public DateTimeOffset StartedUtc { get; set; }
     public DateTimeOffset? CompletedUtc { get; set; }
     public SetStats? Stats { get; set; }
+
+    /// <summary>Earlier sets that hold some of this set's files (written when the set completes).</summary>
+    public List<string>? UsesSets { get; set; }
 }
 
 /// <summary>

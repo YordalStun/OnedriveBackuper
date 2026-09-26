@@ -1,6 +1,8 @@
 <Solution>
   <Folder Name="/src/">
-    <Project Path="src/OnedriveBackuper/OnedriveBackuper.csproj" />
+    <Project Path="src/OnedriveBackuper.App/OnedriveBackuper.App.csproj" />
+    <Project Path="src/OnedriveBackuper.Cli/OnedriveBackuper.Cli.csproj" />
+    <Project Path="src/OnedriveBackuper.Core/OnedriveBackuper.Core.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/OnedriveBackuper.Tests/OnedriveBackuper.Tests.csproj" />

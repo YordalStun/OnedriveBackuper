@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>OnedriveBackuper-cli</AssemblyName>
+    <RootNamespace>OnedriveBackuper.Cli</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="OnedriveBackuper.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\OnedriveBackuper.Core\OnedriveBackuper.Core.csproj" />
+  </ItemGroup>
+
+</Project>

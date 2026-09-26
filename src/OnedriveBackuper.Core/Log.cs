@@ -13,10 +13,44 @@ public interface ILog
     void AttachFile(string path);
 }
 
+/// <summary>A timestamped log file. Nothing is written until a file is attached.</summary>
+public sealed class LogFile : IDisposable
+{
+    private readonly object gate = new();
+    private StreamWriter? writer;
+
+    public void Attach(string path)
+    {
+        lock (gate)
+        {
+            writer?.Dispose();
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            writer = new StreamWriter(new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.Read)) { AutoFlush = true };
+        }
+    }
+
+    public void Write(string level, string message)
+    {
+        lock (gate)
+        {
+            writer?.WriteLine($"{DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)} {level} {message}");
+        }
+    }
+
+    public void Dispose()
+    {
+        lock (gate)
+        {
+            writer?.Dispose();
+            writer = null;
+        }
+    }
+}
+
 /// <summary>Writes to the console and, once attached, to a log file with timestamps.</summary>
 public sealed class ConsoleLog(TextWriter output, TextWriter errors, bool verbose) : ILog, IDisposable
 {
-    private StreamWriter? file;
+    private readonly LogFile file = new();
 
     public void Info(string message) => Write("INFO ", message, output, show: true);
 
@@ -26,12 +60,7 @@ public sealed class ConsoleLog(TextWriter output, TextWriter errors, bool verbos
 
     public void Detail(string message) => Write("     ", message, output, show: verbose);
 
-    public void AttachFile(string path)
-    {
-        file?.Dispose();
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        file = new StreamWriter(new FileStream(path, FileMode.Append, FileAccess.Write, FileShare.Read)) { AutoFlush = true };
-    }
+    public void AttachFile(string path) => file.Attach(path);
 
     private void Write(string level, string message, TextWriter writer, bool show, ConsoleColor? color = null)
     {
@@ -48,10 +77,10 @@ public sealed class ConsoleLog(TextWriter output, TextWriter errors, bool verbos
                 Console.ResetColor();
             }
         }
-        file?.WriteLine($"{DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)} {level} {message}");
+        file.Write(level, message);
     }
 
-    public void Dispose() => file?.Dispose();
+    public void Dispose() => file.Dispose();
 }
 
 public static class Format

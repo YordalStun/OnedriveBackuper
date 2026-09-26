@@ -27,3 +27,12 @@ public sealed class NoCloudFiles : ICloudFiles
     public void Dehydrate(string fullPath) =>
         throw new PlatformNotSupportedException("Freeing up online-only files needs Windows 10 (1709) or later.");
 }
+
+public static class CloudFiles
+{
+    /// <summary>The Windows Cloud Files API where available (Windows 10 1709+), otherwise plain-folder behaviour.</summary>
+    public static ICloudFiles Create(OnedriveBackuper.Windows.FreeUpMethod method) =>
+        OperatingSystem.IsWindowsVersionAtLeast(10, 0, 16299)
+            ? new OnedriveBackuper.Windows.WindowsCloudFiles(method)
+            : new NoCloudFiles();
+}

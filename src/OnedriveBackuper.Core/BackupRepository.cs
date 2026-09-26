@@ -25,6 +25,37 @@ public sealed class BackupRepository
     public string Root { get; }
     public string SetsFolder => Path.Combine(Root, "sets");
     public string LogsFolder => Path.Combine(Root, "logs");
+    private string TrashFolder => Path.Combine(Root, "trash");
+
+    public string LogPathFor(string setId) => Path.Combine(LogsFolder, setId + ".log");
+
+    /// <summary>
+    /// Deletes a set and its log. The folder is first moved out of sets/ in one step, so an interrupted
+    /// delete can never leave something behind that looks like an unfinished backup to resume.
+    /// </summary>
+    public void DeleteSet(BackupSet set)
+    {
+        Directory.CreateDirectory(TrashFolder);
+        var trash = Path.Combine(TrashFolder, $"{set.Id}-{Guid.NewGuid():N}");
+        Directory.Move(set.Folder, trash);
+        if (File.Exists(LogPathFor(set.Id)))
+        {
+            File.Delete(LogPathFor(set.Id));
+        }
+        Directory.Delete(trash, recursive: true);
+    }
+
+    /// <summary>Finishes deletes that were interrupted.</summary>
+    public void EmptyTrash()
+    {
+        if (Directory.Exists(TrashFolder))
+        {
+            foreach (var folder in Directory.EnumerateDirectories(TrashFolder))
+            {
+                Directory.Delete(folder, recursive: true);
+            }
+        }
+    }
 
     /// <summary>All sets, oldest first.</summary>
     public IReadOnlyList<BackupSet> ListSets()

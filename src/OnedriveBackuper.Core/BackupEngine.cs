@@ -23,6 +23,9 @@ public sealed class BackupOptions
     /// <summary>Waits between attempts to free up a file (antivirus or the search indexer often hold it open briefly).</summary>
     public IReadOnlyList<TimeSpan> FreeUpRetryDelays { get; init; } =
         [TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(30)];
+
+    /// <summary>Receives live progress, for progress bars. Optional.</summary>
+    public BackupProgress? Progress { get; init; }
 }
 
 public sealed class BackupReport
@@ -69,12 +72,26 @@ public sealed class BackupEngine
         this.pending = pending;
         this.log = log;
         this.time = time ?? TimeProvider.System;
-        this.freeSpace = freeSpace ?? (path => new DriveInfo(Path.GetPathRoot(Path.GetFullPath(path))!).AvailableFreeSpace);
+        this.freeSpace = freeSpace ?? DiskSpace.Free;
     }
 
     public BackupReport Run(BackupOptions options, CancellationToken cancel)
     {
         var stopwatch = Stopwatch.StartNew();
+        var progress = options.Progress ?? new BackupProgress();
+        progress.Update(_ => new BackupProgressSnapshot { Phase = BackupPhase.Starting, StartedAt = time.GetUtcNow() });
+        try
+        {
+            return Run(options, progress, stopwatch, cancel);
+        }
+        finally
+        {
+            progress.Update(s => s with { Phase = BackupPhase.Finished, CurrentFile = null, CurrentFullPath = null, CurrentStage = FileStage.None });
+        }
+    }
+
+    private BackupReport Run(BackupOptions options, BackupProgress progress, Stopwatch stopwatch, CancellationToken cancel)
+    {
         var sourceRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(options.SourceRoot));
         var backupRoot = Path.GetFullPath(options.BackupRoot);
         CheckFolders(sourceRoot, backupRoot);
@@ -85,10 +102,12 @@ public sealed class BackupEngine
 
         if (!options.DryRun)
         {
-            FreeUpLeftovers(options, report, "an earlier run that was interrupted");
+            progress.Update(s => s with { Phase = BackupPhase.FreeingUpLeftovers });
+            FreeUpLeftovers(options, report, progress, "an earlier run that was interrupted");
         }
 
-        var (set, baseline) = ChooseSet(repository, options, sourceRoot, report);
+        var (set, baseline, fallback) = ChooseSet(repository, options, sourceRoot, report);
+        progress.Update(s => s with { Phase = BackupPhase.Scanning, SetId = report.SetId, Kind = report.Kind, Resumed = report.Resumed });
 
         log.Info($"Scanning {sourceRoot} (this downloads nothing)...");
         var scan = SourceScanner.Scan(sourceRoot, options.Exclude);
@@ -114,7 +133,23 @@ public sealed class BackupEngine
             using (var journal = SetJournal.Open(set.JournalPath))
             {
                 report.AlreadyCopiedBeforeResume = journal.Entries.Count;
-                var context = new RunContext(options, set, baseline, journal, report, sourceRoot);
+                var plan = Plan(scan, baseline, journal);
+                progress.Update(s => s with
+                {
+                    Phase = BackupPhase.BackingUp,
+                    TotalFiles = scan.Files.Count,
+                    TotalBytes = report.ScannedBytes,
+                    FilesToCopy = plan.FilesToCopy,
+                    BytesToCopy = plan.BytesToCopy,
+                    FilesToDownload = plan.FilesToDownload,
+                    BytesToDownload = plan.BytesToDownload,
+                });
+                if (plan.FilesToCopy > 0)
+                {
+                    log.Info($"To copy: {plan.FilesToCopy:N0} files ({Format.Size(plan.BytesToCopy)}), of which {plan.FilesToDownload:N0} ({Format.Size(plan.BytesToDownload)}) are online-only and get downloaded first.");
+                }
+
+                var context = new RunContext(options, set, baseline, fallback, journal, report, sourceRoot, progress);
                 for (var i = 0; i < scan.Files.Count; i++)
                 {
                     if (cancel.IsCancellationRequested)
@@ -127,13 +162,15 @@ public sealed class BackupEngine
                     {
                         entries.Add(entry);
                     }
+                    progress.Update(s => s with { CheckedFiles = i + 1 });
                 }
             }
 
-            FreeUpLeftovers(options, report, "this run");
+            progress.Update(s => s with { Phase = BackupPhase.Finishing });
+            FreeUpLeftovers(options, report, progress, "this run");
             if (!report.Cancelled)
             {
-                KeepFilesInUnreadableFolders(scan, baseline, entries, sourceRoot);
+                KeepFilesInUnreadableFolders(scan, fallback, entries, sourceRoot);
                 Complete(set, entries, report);
             }
         }
@@ -159,8 +196,12 @@ public sealed class BackupEngine
         }
     }
 
-    /// <summary>Resumes an unfinished set, or starts a full or incremental one. Returns no set for a dry run.</summary>
-    private (BackupSet? Set, Dictionary<string, FileEntry> Baseline) ChooseSet(
+    /// <summary>
+    /// Resumes an unfinished set, or starts a full or incremental one. Returns no set for a dry run.
+    /// Baseline: files that count as already backed up (none for a full backup).
+    /// Fallback: the latest backed-up version of each file, kept in the new backup if copying the file fails.
+    /// </summary>
+    private (BackupSet? Set, Dictionary<string, FileEntry> Baseline, Dictionary<string, FileEntry> Fallback) ChooseSet(
         BackupRepository repository, BackupOptions options, string sourceRoot, BackupReport report)
     {
         var unfinished = repository.LatestIncomplete();
@@ -174,9 +215,11 @@ public sealed class BackupEngine
             log.Info($"Resuming unfinished backup {unfinished.Id}. Files it already copied are skipped.");
             if (options.ForceFull && unfinished.Info.Kind != BackupKind.Full)
             {
-                log.Warn("--full was ignored: the unfinished backup is finished first. Run with --full again afterwards.");
+                log.Warn("A full backup was asked for, but the unfinished backup is finished first. Start a full backup again afterwards.");
             }
-            return (Adopt(unfinished), LoadBaseline(repository, unfinished.Info.BaseSetId));
+            var resumedBaseline = LoadBaseline(repository, unfinished.Info.BaseSetId);
+            var resumedFallback = unfinished.Info.BaseSetId != null ? resumedBaseline : LoadBaseline(repository, repository.LatestComplete()?.Id);
+            return (Adopt(unfinished), resumedBaseline, resumedFallback);
         }
 
         var previous = options.ForceFull ? null : repository.LatestComplete();
@@ -192,23 +235,24 @@ public sealed class BackupEngine
         if (options.DryRun)
         {
             log.Info(kind == BackupKind.Full ? "Dry run of a full backup." : $"Dry run of an incremental backup on top of {previous!.Id}.");
-            return (null, baseline);
+            return (null, baseline, baseline);
         }
+        var fallback = previous != null ? baseline : LoadBaseline(repository, repository.LatestComplete()?.Id);
 
         var set = repository.CreateSet(kind, previous?.Id, sourceRoot, time.GetUtcNow());
-        log.AttachFile(Path.Combine(repository.LogsFolder, set.Id + ".log"));
+        log.AttachFile(repository.LogPathFor(set.Id));
         report.SetId = set.Id;
         log.Info(kind == BackupKind.Full
             ? $"Starting full backup {set.Id}."
             : $"Starting incremental backup {set.Id}: only files that are new or changed since {previous!.Id} are copied.");
-        return (set, baseline);
+        return (set, baseline, fallback);
 
         BackupSet Adopt(BackupSet set)
         {
             report.SetId = set.Id;
             report.Kind = set.Info.Kind;
             report.BaseSetId = set.Info.BaseSetId;
-            log.AttachFile(Path.Combine(repository.LogsFolder, set.Id + ".log"));
+            log.AttachFile(repository.LogPathFor(set.Id));
             return set;
         }
     }
@@ -226,13 +270,42 @@ public sealed class BackupEngine
         return baseline;
     }
 
+    private sealed record BackupPlan(int FilesToCopy, long BytesToCopy, int FilesToDownload, long BytesToDownload);
+
+    /// <summary>What needs copying, judged from the scan alone (so it is quick and downloads nothing). Used for progress bars.</summary>
+    private BackupPlan Plan(ScanResult scan, Dictionary<string, FileEntry> baseline, SetJournal journal)
+    {
+        int files = 0, downloads = 0;
+        long bytes = 0, downloadBytes = 0;
+        foreach (var file in scan.Files)
+        {
+            if (Matches(journal.Entries, file) || Matches(baseline, file))
+            {
+                continue;
+            }
+            files++;
+            bytes += file.Size;
+            if (cloud.GetState(file.FullPath, file.Attributes).IsOnlineOnly)
+            {
+                downloads++;
+                downloadBytes += file.Size;
+            }
+        }
+        return new BackupPlan(files, bytes, downloads, downloadBytes);
+
+        static bool Matches(IReadOnlyDictionary<string, FileEntry> entries, SourceFile file) =>
+            entries.TryGetValue(file.RelativePath, out var entry) && entry.Size == file.Size && entry.LastWriteUtc == file.LastWriteUtc;
+    }
+
     private sealed record RunContext(
         BackupOptions Options,
         BackupSet Set,
         Dictionary<string, FileEntry> Baseline,
+        Dictionary<string, FileEntry> Fallback,
         SetJournal Journal,
         BackupReport Report,
-        string SourceRoot);
+        string SourceRoot,
+        BackupProgress Progress);
 
     /// <summary>Returns the file's entry for the new manifest, or null if it should not be in it.</summary>
     private FileEntry? ProcessFile(RunContext run, SourceFile scanned, int number, int total)
@@ -257,14 +330,24 @@ public sealed class BackupEngine
         if (previous != null && previous.Size == size && previous.LastWriteUtc == lastWrite)
         {
             run.Report.UnchangedFiles++;
+            run.Progress.Update(s => s with { UnchangedFiles = run.Report.UnchangedFiles });
             return previous;
         }
 
         var state = cloud.GetState(scanned.FullPath, info.Attributes);
-        var progress = $"[{number}/{total}]";
+        var counter = $"[{number}/{total}]";
+        run.Progress.Update(s => s with
+        {
+            CurrentFile = relativePath,
+            CurrentFullPath = scanned.FullPath,
+            CurrentFileSize = size,
+            CurrentFileNeedsDownload = state.IsOnlineOnly,
+            CurrentFileCopiedBytes = 0,
+            CurrentStage = state.IsOnlineOnly ? FileStage.Downloading : FileStage.Copying,
+        });
         try
         {
-            var entry = BackUpFile(run, relativePath, scanned.FullPath, size, lastWrite, state, progress);
+            var entry = BackUpFile(run, relativePath, scanned.FullPath, size, lastWrite, state, counter);
             run.Journal.Append(entry);
             run.Report.CopiedFiles++;
             run.Report.CopiedBytes += size;
@@ -272,14 +355,31 @@ public sealed class BackupEngine
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or BackupException or PlatformNotSupportedException)
         {
-            log.Error($"{progress} FAILED {relativePath}: {ex.Message}");
+            log.Error($"{counter} FAILED {relativePath}: {ex.Message}");
             run.Report.Failed.Add(new FailedFile(relativePath, ex.Message));
             // Keep the previous version (if any) in this backup; the file is retried on the next run.
-            return previous;
+            return previous ?? run.Fallback.GetValueOrDefault(relativePath);
+        }
+        finally
+        {
+            var report = run.Report;
+            run.Progress.Update(s => s with
+            {
+                CopiedFiles = report.CopiedFiles,
+                CopiedBytes = report.CopiedBytes,
+                DownloadedFiles = report.DownloadedFiles,
+                DownloadedBytes = report.DownloadedBytes,
+                FreedUpFiles = report.FreedUpFiles,
+                FailedFiles = report.Failed.Count,
+                CurrentFile = null,
+                CurrentFullPath = null,
+                CurrentFileCopiedBytes = 0,
+                CurrentStage = FileStage.None,
+            });
         }
     }
 
-    private FileEntry BackUpFile(RunContext run, string relativePath, string fullPath, long size, DateTime lastWrite, CloudFileState state, string progress)
+    private FileEntry BackUpFile(RunContext run, string relativePath, string fullPath, long size, DateTime lastWrite, CloudFileState state, string counter)
     {
         var target = run.Set.DataPathFor(relativePath);
         var backupFree = freeSpace(run.Set.Folder);
@@ -290,8 +390,8 @@ public sealed class BackupEngine
 
         if (!state.IsOnlineOnly)
         {
-            log.Info($"{progress} copy     {relativePath} ({Format.Size(size)})");
-            return CopyAndCheck(fullPath, target, relativePath, size, lastWrite, run.Set.Id);
+            log.Info($"{counter} copy     {relativePath} ({Format.Size(size)})");
+            return CopyAndCheck(fullPath, target, relativePath, size, lastWrite, run.Set.Id, CopyProgress(run.Progress));
         }
 
         var sourceFree = freeSpace(run.SourceRoot);
@@ -299,10 +399,10 @@ public sealed class BackupEngine
         {
             throw new BackupException(
                 $"Not enough free space to download it: needs {Format.Size(size)} plus the {Format.Size(run.Options.ReserveBytes)} reserve, " +
-                $"{Format.Size(sourceFree)} free. Free up space on this drive or lower --reserve.");
+                $"{Format.Size(sourceFree)} free. Free up space on this drive or lower the reserve.");
         }
 
-        log.Info($"{progress} download {relativePath} ({Format.Size(size)})");
+        log.Info($"{counter} download {relativePath} ({Format.Size(size)})");
         if (state.FreeUpAfterBackup)
         {
             pending.Add(fullPath);
@@ -315,29 +415,37 @@ public sealed class BackupEngine
             run.Report.DownloadedBytes += size;
             run.Report.LargestDownload = Math.Max(run.Report.LargestDownload, size);
             log.Detail($"         downloaded in {Format.Duration(downloadTime.Elapsed)}");
+            run.Progress.Update(s => s with { CurrentStage = FileStage.Copying });
             // Take the reference size and time from the downloaded file, so the "changed while copying" check
             // only catches real edits, even if a sync client touched the metadata while downloading.
             var downloaded = new FileInfo(fullPath);
-            return CopyAndCheck(fullPath, target, relativePath, downloaded.Length, downloaded.LastWriteTimeUtc, run.Set.Id);
+            return CopyAndCheck(fullPath, target, relativePath, downloaded.Length, downloaded.LastWriteTimeUtc, run.Set.Id, CopyProgress(run.Progress));
         }
         finally
         {
             // Whatever happened (even a failed download can leave part of the file on disk), give the space back.
-            if (state.FreeUpAfterBackup && FreeUp(run.Options, fullPath, relativePath))
+            if (state.FreeUpAfterBackup)
             {
-                run.Report.FreedUpFiles++;
+                run.Progress.Update(s => s with { CurrentStage = FileStage.FreeingUp });
+                if (FreeUp(run.Options, fullPath, relativePath))
+                {
+                    run.Report.FreedUpFiles++;
+                }
             }
         }
     }
 
+    private static Action<long> CopyProgress(BackupProgress progress) =>
+        copied => progress.Update(s => s with { CurrentFileCopiedBytes = copied });
+
     /// <summary>Copies to a temporary file while hashing it, checks nothing changed meanwhile, then moves it into place.</summary>
-    internal static FileEntry CopyAndCheck(string source, string target, string relativePath, long size, DateTime lastWrite, string setId)
+    internal static FileEntry CopyAndCheck(string source, string target, string relativePath, long size, DateTime lastWrite, string setId, Action<long>? onProgress = null)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(target)!);
         var temp = target + ".partial";
         try
         {
-            var (copied, sha256) = FileCopy.CopyWithHash(source, temp, size);
+            var (copied, sha256) = FileCopy.CopyWithHash(source, temp, size, onProgress);
             var after = new FileInfo(source);
             if (copied != size || !after.Exists || after.Length != size || after.LastWriteTimeUtc != lastWrite)
             {
@@ -387,7 +495,7 @@ public sealed class BackupEngine
     }
 
     /// <summary>Frees up files a crashed or interrupted run left downloaded, plus any whose free-up failed earlier.</summary>
-    private void FreeUpLeftovers(BackupOptions options, BackupReport report, string origin)
+    private void FreeUpLeftovers(BackupOptions options, BackupReport report, BackupProgress progress, string origin)
     {
         if (pending.Items.Count == 0)
         {
@@ -396,11 +504,13 @@ public sealed class BackupEngine
         log.Info($"Freeing up {pending.Items.Count} file(s) left downloaded by {origin}...");
         foreach (var path in pending.Items.ToList())
         {
+            progress.Update(s => s with { CurrentFile = path, CurrentFullPath = path, CurrentStage = FileStage.FreeingUp });
             if (FreeUp(options, path, path))
             {
                 report.FreedUpFiles++;
             }
         }
+        progress.Update(s => s with { FreedUpFiles = report.FreedUpFiles, CurrentFile = null, CurrentFullPath = null, CurrentStage = FileStage.None });
     }
 
     /// <summary>
@@ -422,12 +532,12 @@ public sealed class BackupEngine
     /// A folder that could not be read this time does not mean its files were deleted:
     /// keep their previous versions in the new backup.
     /// </summary>
-    private static void KeepFilesInUnreadableFolders(ScanResult scan, Dictionary<string, FileEntry> baseline, List<FileEntry> entries, string sourceRoot)
+    private static void KeepFilesInUnreadableFolders(ScanResult scan, Dictionary<string, FileEntry> fallback, List<FileEntry> entries, string sourceRoot)
     {
         foreach (var problem in scan.Problems)
         {
             var folder = Paths.ToRelative(sourceRoot, problem.Path);
-            entries.AddRange(baseline.Values.Where(e => folder == "." || e.Path.StartsWith(folder + "/", Paths.Comparison)));
+            entries.AddRange(fallback.Values.Where(e => folder == "." || e.Path.StartsWith(folder + "/", Paths.Comparison)));
         }
     }
 
@@ -459,8 +569,8 @@ public sealed class BackupEngine
     private void Complete(BackupSet set, List<FileEntry> entries, BackupReport report)
     {
         entries.Sort((a, b) => Paths.Comparer.Compare(a.Path, b.Path));
-        set.Info.CompletedUtc = time.GetUtcNow();
         var copiedHere = entries.Where(e => e.StoredIn == set.Id).ToList();
+        set.Info.CompletedUtc = time.GetUtcNow();
         set.Info.Stats = new SetStats
         {
             TotalFiles = entries.Count,
@@ -472,6 +582,8 @@ public sealed class BackupEngine
             UnchangedFiles = entries.Count - copiedHere.Count,
             FailedFiles = report.Failed.Count,
         };
+        // Which sets hold this set's files, so clean-up can tell what is still needed without reading manifests.
+        set.Info.UsesSets = entries.Select(e => e.StoredIn).Where(id => id != set.Id).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToList();
         Json.WriteAtomically(set.InfoPath, set.Info);
         // The manifest goes last: once it exists, the set counts as complete.
         Json.WriteAtomically(set.ManifestPath, new SetManifest { SetId = set.Id, Files = entries, Failed = report.Failed });
@@ -496,7 +608,7 @@ internal static class FileCopy
     private const int BufferSize = 1 << 20;
 
     /// <summary>Copies a file and returns the bytes copied and their SHA-256 in one pass.</summary>
-    public static (long Copied, string Sha256) CopyWithHash(string source, string target, long expectedSize)
+    public static (long Copied, string Sha256) CopyWithHash(string source, string target, long expectedSize, Action<long>? onProgress = null)
     {
         using var input = new FileStream(source, new FileStreamOptions
         {
@@ -515,10 +627,10 @@ internal static class FileCopy
             BufferSize = 0,
             PreallocationSize = expectedSize,
         });
-        return CopyWithHash(input, output);
+        return CopyWithHash(input, output, onProgress);
     }
 
-    public static (long Copied, string Sha256) CopyWithHash(Stream input, Stream? output)
+    public static (long Copied, string Sha256) CopyWithHash(Stream input, Stream? output, Action<long>? onProgress = null)
     {
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         var buffer = ArrayPool<byte>.Shared.Rent(BufferSize);
@@ -531,6 +643,7 @@ internal static class FileCopy
                 hash.AppendData(buffer, 0, read);
                 output?.Write(buffer, 0, read);
                 total += read;
+                onProgress?.Invoke(total);
             }
             if (output is FileStream file)
             {
@@ -544,9 +657,15 @@ internal static class FileCopy
         return (total, Convert.ToHexStringLower(hash.GetHashAndReset()));
     }
 
-    public static string HashFile(string path)
+    public static string HashFile(string path, Action<long>? onProgress = null)
     {
         using var input = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 0, FileOptions.SequentialScan);
-        return CopyWithHash(input, null).Sha256;
+        return CopyWithHash(input, null, onProgress).Sha256;
     }
+}
+
+public static class DiskSpace
+{
+    /// <summary>Free space on the drive holding <paramref name="path"/>.</summary>
+    public static long Free(string path) => new DriveInfo(Path.GetPathRoot(Path.GetFullPath(path))!).AvailableFreeSpace;
 }

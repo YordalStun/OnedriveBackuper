@@ -16,7 +16,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\OnedriveBackuper\OnedriveBackuper.csproj" />
+    <ProjectReference Include="..\..\src\OnedriveBackuper.Core\OnedriveBackuper.Core.csproj" />
+    <ProjectReference Include="..\..\src\OnedriveBackuper.Cli\OnedriveBackuper.Cli.csproj" />
   </ItemGroup>
 
 </Project>
