@@ -109,22 +109,24 @@ public sealed class BackupEngine
         }
         else
         {
-            using var journal = SetJournal.Open(set.JournalPath);
-            report.AlreadyCopiedBeforeResume = journal.Entries.Count;
             var entries = new List<FileEntry>();
-            var context = new RunContext(options, set, baseline, journal, report, sourceRoot);
-
-            for (var i = 0; i < scan.Files.Count; i++)
+            // Closed before Complete() deletes it: Windows cannot delete a file that is still open.
+            using (var journal = SetJournal.Open(set.JournalPath))
             {
-                if (cancel.IsCancellationRequested)
+                report.AlreadyCopiedBeforeResume = journal.Entries.Count;
+                var context = new RunContext(options, set, baseline, journal, report, sourceRoot);
+                for (var i = 0; i < scan.Files.Count; i++)
                 {
-                    report.Cancelled = true;
-                    break;
-                }
-                var entry = ProcessFile(context, scan.Files[i], i + 1, scan.Files.Count);
-                if (entry != null)
-                {
-                    entries.Add(entry);
+                    if (cancel.IsCancellationRequested)
+                    {
+                        report.Cancelled = true;
+                        break;
+                    }
+                    var entry = ProcessFile(context, scan.Files[i], i + 1, scan.Files.Count);
+                    if (entry != null)
+                    {
+                        entries.Add(entry);
+                    }
                 }
             }
 
