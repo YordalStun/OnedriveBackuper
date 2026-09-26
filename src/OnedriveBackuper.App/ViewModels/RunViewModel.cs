@@ -389,6 +389,7 @@ public sealed class RunViewModel : ObservableObject
         backingUpSince = startedAt.AddSeconds(20);
         IsRunning = true;
         Apply(snapshot, downloaded);
+        Log.Clear();
         foreach (var line in lines)
         {
             Log.Add(line);

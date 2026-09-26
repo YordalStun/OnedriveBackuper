@@ -94,15 +94,15 @@
                 Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
                 BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}">
             <ListView ItemsSource="{Binding Sets}" SelectedItem="{Binding Selected}" SelectionMode="Single"
-                      BorderThickness="0" Background="Transparent">
+                      BorderThickness="0" Background="Transparent" ScrollViewer.HorizontalScrollBarVisibility="Auto">
                 <ListView.View>
                     <GridView>
-                        <GridViewColumn Header="When" Width="170" DisplayMemberBinding="{Binding When}" />
-                        <GridViewColumn Header="Type" Width="110" DisplayMemberBinding="{Binding Kind}" />
-                        <GridViewColumn Header="Files" Width="100" DisplayMemberBinding="{Binding Files}" />
-                        <GridViewColumn Header="Copied" Width="160" DisplayMemberBinding="{Binding Copied}" />
-                        <GridViewColumn Header="Problems" Width="90" DisplayMemberBinding="{Binding Problems}" />
-                        <GridViewColumn Header="Status" Width="280" DisplayMemberBinding="{Binding Status}" />
+                        <GridViewColumn Header="When" Width="150" DisplayMemberBinding="{Binding When}" />
+                        <GridViewColumn Header="Type" Width="100" DisplayMemberBinding="{Binding Kind}" />
+                        <GridViewColumn Header="Files" Width="85" DisplayMemberBinding="{Binding Files}" />
+                        <GridViewColumn Header="Copied" Width="150" DisplayMemberBinding="{Binding Copied}" />
+                        <GridViewColumn Header="Problems" Width="85" DisplayMemberBinding="{Binding Problems}" />
+                        <GridViewColumn Header="Status" Width="200" DisplayMemberBinding="{Binding Status}" />
                     </GridView>
                 </ListView.View>
             </ListView>

@@ -62,7 +62,7 @@ public sealed class BackupsViewModel : ObservableObject
 
         RefreshCommand = new RelayCommand(Load, () => !IsWorking);
         OpenFolderCommand = new RelayCommand(() => RunViewModel.OpenInShell(main.Settings.BackupFolder));
-        BeginRestoreCommand = new RelayCommand(BeginRestore, () => Selected?.IsComplete == true && Selected.Set != null && !main.IsBusy);
+        BeginRestoreCommand = new RelayCommand(BeginRestore, () => Selected?.IsComplete == true && !main.IsBusy);
         BrowseRestoreTargetCommand = new RelayCommand(BrowseRestoreTarget);
         StartRestoreCommand = new RelayCommand(StartRestore, () => RestoreTarget.Length > 0 && !main.IsBusy);
         CancelRestoreCommand = new RelayCommand(() => ShowRestorePanel = false);
@@ -131,6 +131,7 @@ public sealed class BackupsViewModel : ObservableObject
             Sets.Add(row);
         }
         FolderText = $"Saved in {folder}";
+        EmptyText = "";
         Selected = Sets.FirstOrDefault();
     }
 
