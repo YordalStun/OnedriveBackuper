@@ -1,0 +1,192 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:local="clr-namespace:OnedriveBackuper.App.ViewModels">
+
+    <!--
+        Colours come from WPF's Fluent theme (DynamicResource, so light/dark follows Windows).
+        Only layout and text sizes are defined here.
+    -->
+
+    <BooleanToVisibilityConverter x:Key="VisibleWhenTrue" />
+    <local:VisibleWhenFalseConverter x:Key="VisibleWhenFalse" />
+    <local:VisibleWhenTextConverter x:Key="VisibleWhenText" />
+
+    <FontFamily x:Key="IconFont">Segoe Fluent Icons, Segoe MDL2 Assets</FontFamily>
+
+    <Style x:Key="PageTitle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="26" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+        <Setter Property="Margin" Value="0,0,0,4" />
+    </Style>
+
+    <Style x:Key="PageSubtitle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="14" />
+        <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+        <Setter Property="Margin" Value="0,0,0,20" />
+    </Style>
+
+    <Style x:Key="CardTitle" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="16" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+        <Setter Property="Margin" Value="0,0,0,10" />
+    </Style>
+
+    <Style x:Key="Body" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="14" />
+        <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+
+    <Style x:Key="Secondary" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+        <Setter Property="TextWrapping" Value="Wrap" />
+    </Style>
+
+    <Style x:Key="Label" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+        <Setter Property="Margin" Value="0,12,0,6" />
+    </Style>
+
+    <Style x:Key="BigNumber" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="30" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+    </Style>
+
+    <Style x:Key="Icon" TargetType="TextBlock">
+        <Setter Property="FontFamily" Value="{StaticResource IconFont}" />
+        <Setter Property="FontSize" Value="16" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+    </Style>
+
+    <Style x:Key="Card" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorDefaultBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource CardStrokeColorDefaultBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="Padding" Value="20,16" />
+        <Setter Property="Margin" Value="0,0,0,12" />
+    </Style>
+
+    <!-- A small number-and-label tile, used for the backup counters. -->
+    <Style x:Key="StatTile" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}" />
+        <Setter Property="CornerRadius" Value="6" />
+        <Setter Property="Padding" Value="14,10" />
+        <Setter Property="Margin" Value="0,0,8,0" />
+    </Style>
+
+    <Style x:Key="StatNumber" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="20" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+    </Style>
+
+    <Style x:Key="StatLabel" TargetType="TextBlock">
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+    </Style>
+
+    <!-- One of the three steps for the current file: Download, Copy, Free up. -->
+    <Style x:Key="StepPill" TargetType="Border">
+        <Setter Property="CornerRadius" Value="14" />
+        <Setter Property="Padding" Value="12,5" />
+        <Setter Property="Margin" Value="0,0,6,0" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="BorderBrush" Value="{DynamicResource ControlStrokeColorDefaultBrush}" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="TextElement.Foreground" Value="{DynamicResource TextFillColorTertiaryBrush}" />
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding State}" Value="{x:Static local:StepState.Active}">
+                <Setter Property="Background" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+                <Setter Property="TextElement.Foreground" Value="{DynamicResource TextOnAccentFillColorPrimaryBrush}" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding State}" Value="{x:Static local:StepState.Done}">
+                <Setter Property="Background" Value="{DynamicResource SystemFillColorSuccessBackgroundBrush}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource SystemFillColorSuccessBrush}" />
+                <Setter Property="TextElement.Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding State}" Value="{x:Static local:StepState.NotNeeded}">
+                <Setter Property="Opacity" Value="0.45" />
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+
+    <!-- Left navigation: a ListBox whose items look like the Windows 11 Settings sidebar. -->
+    <Style x:Key="NavItem" TargetType="ListBoxItem">
+        <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ListBoxItem">
+                    <Grid Height="40" Margin="6,2" Background="Transparent">
+                        <Border x:Name="Highlight" CornerRadius="5" Opacity="0"
+                                Background="{DynamicResource SubtleFillColorSecondaryBrush}" />
+                        <Border x:Name="Indicator" Width="3" Height="16" CornerRadius="1.5" HorizontalAlignment="Left"
+                                Background="{DynamicResource AccentFillColorDefaultBrush}" Visibility="Collapsed" />
+                        <ContentPresenter Margin="14,0,8,0" VerticalAlignment="Center" />
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Highlight" Property="Opacity" Value="0.6" />
+                        </Trigger>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="Highlight" Property="Opacity" Value="1" />
+                            <Setter TargetName="Indicator" Property="Visibility" Value="Visible" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- A coloured banner for results: success, warning, error or neutral. -->
+    <Style x:Key="ResultBanner" TargetType="Border">
+        <Setter Property="CornerRadius" Value="8" />
+        <Setter Property="Padding" Value="20,16" />
+        <Setter Property="Margin" Value="0,0,0,12" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Background" Value="{DynamicResource SystemFillColorNeutralBackgroundBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource CardStrokeColorDefaultBrush}" />
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding Tone}" Value="{x:Static local:Tone.Good}">
+                <Setter Property="Background" Value="{DynamicResource SystemFillColorSuccessBackgroundBrush}" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding Tone}" Value="{x:Static local:Tone.Warning}">
+                <Setter Property="Background" Value="{DynamicResource SystemFillColorCautionBackgroundBrush}" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding Tone}" Value="{x:Static local:Tone.Bad}">
+                <Setter Property="Background" Value="{DynamicResource SystemFillColorCriticalBackgroundBrush}" />
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="ResultIcon" TargetType="TextBlock" BasedOn="{StaticResource Icon}">
+        <Setter Property="FontSize" Value="28" />
+        <Setter Property="Foreground" Value="{DynamicResource SystemFillColorNeutralBrush}" />
+        <Setter Property="Text" Value="&#xE946;" />
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding Tone}" Value="{x:Static local:Tone.Good}">
+                <Setter Property="Foreground" Value="{DynamicResource SystemFillColorSuccessBrush}" />
+                <Setter Property="Text" Value="&#xE930;" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding Tone}" Value="{x:Static local:Tone.Warning}">
+                <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCautionBrush}" />
+                <Setter Property="Text" Value="&#xE7BA;" />
+            </DataTrigger>
+            <DataTrigger Binding="{Binding Tone}" Value="{x:Static local:Tone.Bad}">
+                <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCriticalBrush}" />
+                <Setter Property="Text" Value="&#xEA39;" />
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+
+</ResourceDictionary>

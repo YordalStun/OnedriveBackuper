@@ -1,0 +1,111 @@
+<UserControl x:Class="OnedriveBackuper.App.Views.BackupsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <DockPanel Margin="36,28,36,28">
+        <StackPanel DockPanel.Dock="Top">
+            <TextBlock Text="Backups" Style="{StaticResource PageTitle}" />
+            <TextBlock Text="{Binding FolderText}" Style="{StaticResource PageSubtitle}" />
+
+            <!-- Toolbar -->
+            <DockPanel Margin="0,0,0,14">
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <Button Padding="12,7" Margin="8,0,0,0" Command="{Binding RefreshCommand}" ToolTip="Refresh">
+                        <TextBlock Text="&#xE72C;" FontFamily="{StaticResource IconFont}" />
+                    </Button>
+                    <Button Padding="14,7" Margin="8,0,0,0" Command="{Binding OpenFolderCommand}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE838;" FontFamily="{StaticResource IconFont}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                            <TextBlock Text="Open folder" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <Button Style="{DynamicResource AccentButtonStyle}" Padding="16,7" Margin="0,0,8,0" Command="{Binding BeginRestoreCommand}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE777;" FontFamily="{StaticResource IconFont}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                            <TextBlock Text="Restore..." VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                    <Button Padding="16,7" Margin="0,0,8,0" Command="{Binding VerifyCommand}"
+                            ToolTip="Re-read every file in this backup and compare it with its checksum.">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE9D5;" FontFamily="{StaticResource IconFont}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                            <TextBlock Text="Check" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                    <Button Padding="16,7" Command="{Binding DeleteCommand}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="&#xE74D;" FontFamily="{StaticResource IconFont}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                            <TextBlock Text="Delete" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </DockPanel>
+
+            <!-- Restore options -->
+            <Border Style="{StaticResource Card}" Visibility="{Binding ShowRestorePanel, Converter={StaticResource VisibleWhenTrue}}">
+                <StackPanel>
+                    <TextBlock Text="Restore the selected backup" Style="{StaticResource CardTitle}" />
+                    <TextBlock Text="Files are copied into a folder of your choice, exactly as they were at the time of this backup."
+                               Style="{StaticResource Secondary}" />
+                    <TextBlock Text="Restore into" Style="{StaticResource Label}" />
+                    <DockPanel>
+                        <Button DockPanel.Dock="Right" Content="Browse..." Padding="14,6" Margin="8,0,0,0" Command="{Binding BrowseRestoreTargetCommand}" />
+                        <TextBox Text="{Binding RestoreTarget, UpdateSourceTrigger=PropertyChanged}" />
+                    </DockPanel>
+                    <TextBlock Text="Only these files or folders (optional)" Style="{StaticResource Label}" />
+                    <TextBox Text="{Binding RestoreOnly, UpdateSourceTrigger=PropertyChanged}" />
+                    <TextBlock Text="Leave empty to restore everything. Separate several with ; for example: Documents/Taxes; *.xlsx"
+                               Style="{StaticResource Secondary}" Margin="0,4,0,0" />
+                    <CheckBox Content="Replace files that already exist in that folder" IsChecked="{Binding RestoreOverwrite}" Margin="0,12,0,0" />
+                    <StackPanel Orientation="Horizontal" Margin="0,16,0,0">
+                        <Button Content="Start restore" Style="{DynamicResource AccentButtonStyle}" Padding="18,7" Margin="0,0,8,0" Command="{Binding StartRestoreCommand}" />
+                        <Button Content="Cancel" Padding="16,7" Command="{Binding CancelRestoreCommand}" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- Restore / check in progress -->
+            <Border Style="{StaticResource Card}" Visibility="{Binding IsWorking, Converter={StaticResource VisibleWhenTrue}}">
+                <StackPanel>
+                    <DockPanel>
+                        <Button DockPanel.Dock="Right" Content="Stop" Padding="16,6" Command="{Binding StopCommand}" />
+                        <TextBlock Text="{Binding WorkTitle}" Style="{StaticResource CardTitle}" VerticalAlignment="Center" Margin="0" />
+                    </DockPanel>
+                    <ProgressBar Height="6" Margin="0,12,0,8" Maximum="100" Value="{Binding WorkPercent, Mode=OneWay}" />
+                    <TextBlock Text="{Binding WorkDetail}" Style="{StaticResource Secondary}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" />
+                </StackPanel>
+            </Border>
+
+            <!-- Result of the last restore / check / delete -->
+            <Border Style="{StaticResource ResultBanner}" Visibility="{Binding ResultText, Converter={StaticResource VisibleWhenText}}">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Left" Style="{StaticResource ResultIcon}" FontSize="20" Margin="0,0,14,0" VerticalAlignment="Top" />
+                    <TextBlock Text="{Binding ResultText}" Style="{StaticResource Body}" />
+                </DockPanel>
+            </Border>
+
+            <TextBlock Text="{Binding EmptyText}" Style="{StaticResource Body}" Margin="0,0,0,12"
+                       Visibility="{Binding EmptyText, Converter={StaticResource VisibleWhenText}}" />
+        </StackPanel>
+
+        <!-- The list -->
+        <Border CornerRadius="8" BorderThickness="1" Padding="4"
+                Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}">
+            <ListView ItemsSource="{Binding Sets}" SelectedItem="{Binding Selected}" SelectionMode="Single"
+                      BorderThickness="0" Background="Transparent">
+                <ListView.View>
+                    <GridView>
+                        <GridViewColumn Header="When" Width="170" DisplayMemberBinding="{Binding When}" />
+                        <GridViewColumn Header="Type" Width="110" DisplayMemberBinding="{Binding Kind}" />
+                        <GridViewColumn Header="Files" Width="100" DisplayMemberBinding="{Binding Files}" />
+                        <GridViewColumn Header="Copied" Width="160" DisplayMemberBinding="{Binding Copied}" />
+                        <GridViewColumn Header="Problems" Width="90" DisplayMemberBinding="{Binding Problems}" />
+                        <GridViewColumn Header="Status" Width="280" DisplayMemberBinding="{Binding Status}" />
+                    </GridView>
+                </ListView.View>
+            </ListView>
+        </Border>
+    </DockPanel>
+</UserControl>

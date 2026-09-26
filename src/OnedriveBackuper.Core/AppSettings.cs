@@ -13,6 +13,9 @@ public sealed class AppSettings
     public FreeUpMethod FreeUpMethod { get; set; } = FreeUpMethod.Auto;
     public ScheduleSettings Schedule { get; set; } = new();
     public RetentionSettings Retention { get; set; } = new();
+
+    /// <summary>The program the scheduled task starts, so a moved or updated copy can fix the task.</summary>
+    public string? ScheduledExePath { get; set; }
     public LastRunInfo? LastRun { get; set; }
 
     public static string DefaultFolder => Path.Combine(

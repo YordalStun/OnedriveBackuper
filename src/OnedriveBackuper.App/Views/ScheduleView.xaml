@@ -1,0 +1,115 @@
+<UserControl x:Class="OnedriveBackuper.App.Views.ScheduleView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Margin="36,28,36,28" MaxWidth="980">
+            <TextBlock Text="Schedule" Style="{StaticResource PageTitle}" />
+            <TextBlock Text="Back up automatically, and keep the backup drive from filling up." Style="{StaticResource PageSubtitle}" />
+
+            <!-- Automatic backups -->
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
+                    <DockPanel>
+                        <TextBlock DockPanel.Dock="Left" Text="&#xE787;" Style="{StaticResource Icon}" FontSize="22" Margin="0,0,14,0" />
+                        <StackPanel>
+                            <CheckBox IsChecked="{Binding Enabled}" FontSize="15" FontWeight="SemiBold" Content="Back up automatically" />
+                            <TextBlock Text="{Binding Summary}" Style="{StaticResource Secondary}" Margin="28,2,0,0"
+                                       Visibility="{Binding Enabled, Converter={StaticResource VisibleWhenTrue}}" />
+                        </StackPanel>
+                    </DockPanel>
+
+                    <StackPanel Margin="36,4,0,0" IsEnabled="{Binding Enabled}">
+                        <TextBlock Text="How often" Style="{StaticResource Label}" />
+                        <ComboBox ItemsSource="{Binding Frequencies}" SelectedIndex="{Binding FrequencyIndex}" Width="300" HorizontalAlignment="Left" />
+
+                        <StackPanel Visibility="{Binding IsWeekly, Converter={StaticResource VisibleWhenTrue}}">
+                            <TextBlock Text="On" Style="{StaticResource Label}" />
+                            <ItemsControl ItemsSource="{Binding Days}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <WrapPanel />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <CheckBox Content="{Binding Name}" IsChecked="{Binding IsChecked}" Margin="0,0,14,6" MinWidth="0" />
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+
+                        <StackPanel Visibility="{Binding IsEveryFewHours, Converter={StaticResource VisibleWhenTrue}}">
+                            <TextBlock Text="Every" Style="{StaticResource Label}" />
+                            <StackPanel Orientation="Horizontal">
+                                <ComboBox ItemsSource="{Binding HourIntervals}" SelectedItem="{Binding EveryHours}" Width="90" />
+                                <TextBlock Text="hours" Style="{StaticResource Body}" VerticalAlignment="Center" Margin="10,0,0,0" />
+                            </StackPanel>
+                        </StackPanel>
+
+                        <TextBlock Text="{Binding TimeLabel}" Style="{StaticResource Label}" />
+                        <StackPanel Orientation="Horizontal">
+                            <ComboBox ItemsSource="{Binding Hours}" SelectedItem="{Binding Hour}" ItemStringFormat="00" Width="80" />
+                            <TextBlock Text=":" FontSize="16" VerticalAlignment="Center" Margin="8,0" Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                            <ComboBox ItemsSource="{Binding Minutes}" SelectedItem="{Binding Minute}" ItemStringFormat="00" Width="80" />
+                        </StackPanel>
+
+                        <TextBlock Text="{Binding NextRunText}" Style="{StaticResource Body}" FontWeight="SemiBold" Margin="0,14,0,0" />
+                    </StackPanel>
+
+                    <Border Margin="0,16,0,0" Padding="14,10" CornerRadius="6" Background="{DynamicResource SubtleFillColorSecondaryBrush}">
+                        <DockPanel>
+                            <TextBlock DockPanel.Dock="Left" Text="&#xE946;" Style="{StaticResource Icon}" Margin="0,1,12,0" VerticalAlignment="Top" />
+                            <TextBlock Style="{StaticResource Secondary}">
+                                Backups run while you are signed in to Windows, because OneDrive has to be running to download files
+                                (a locked screen is fine). If the PC is off or asleep at that time, the backup runs as soon as it is back.
+                                While it runs you will see an icon next to the clock; click it to watch the progress.
+                            </TextBlock>
+                        </DockPanel>
+                    </Border>
+                </StackPanel>
+            </Border>
+
+            <!-- Clean-up -->
+            <Border Style="{StaticResource Card}">
+                <StackPanel>
+                    <DockPanel>
+                        <TextBlock DockPanel.Dock="Left" Text="&#xE74D;" Style="{StaticResource Icon}" FontSize="22" Margin="0,0,14,0" />
+                        <CheckBox IsChecked="{Binding RetentionEnabled}" FontSize="15" FontWeight="SemiBold" Content="Clean up old backups automatically" />
+                    </DockPanel>
+                    <StackPanel Margin="36,4,0,0" IsEnabled="{Binding RetentionEnabled}">
+                        <TextBlock Text="Start a new full backup every" Style="{StaticResource Label}" />
+                        <StackPanel Orientation="Horizontal">
+                            <ComboBox ItemsSource="{Binding FullEveryChoices}" SelectedItem="{Binding FullEveryDays}" Width="90" />
+                            <TextBlock Text="days" Style="{StaticResource Body}" VerticalAlignment="Center" Margin="10,0,0,0" />
+                        </StackPanel>
+                        <TextBlock Text="Keep the last" Style="{StaticResource Label}" />
+                        <StackPanel Orientation="Horizontal">
+                            <ComboBox ItemsSource="{Binding KeepChoices}" SelectedItem="{Binding KeepFullBackups}" Width="90" />
+                            <TextBlock Text="full backups, each with the incremental backups made after it" Style="{StaticResource Body}"
+                                       VerticalAlignment="Center" Margin="10,0,0,0" />
+                        </StackPanel>
+                        <TextBlock Text="{Binding RetentionSummary}" Style="{StaticResource Secondary}" Margin="0,12,0,0" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <!-- Save -->
+            <StackPanel Orientation="Horizontal" Margin="0,4,0,12">
+                <Button Style="{DynamicResource AccentButtonStyle}" Padding="22,8" Command="{Binding SaveCommand}">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="&#xE74E;" FontFamily="{StaticResource IconFont}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                        <TextBlock Text="Save" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+                <TextBlock Text="You have changes that are not saved yet." Style="{StaticResource Secondary}" VerticalAlignment="Center" Margin="14,0,0,0"
+                           Visibility="{Binding Dirty, Converter={StaticResource VisibleWhenTrue}}" />
+            </StackPanel>
+            <Border Style="{StaticResource ResultBanner}" Visibility="{Binding StatusText, Converter={StaticResource VisibleWhenText}}">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Left" Style="{StaticResource ResultIcon}" FontSize="20" Margin="0,0,14,0" VerticalAlignment="Top" />
+                    <TextBlock Text="{Binding StatusText}" Style="{StaticResource Body}" />
+                </DockPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

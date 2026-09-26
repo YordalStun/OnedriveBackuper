@@ -8,7 +8,24 @@
     <UseWPF>true</UseWPF>
     <!-- Only for the tray icon (NotifyIcon); WPF has none of its own. -->
     <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- WPF's Fluent (Windows 11 style) theme is marked experimental; it is what gives the modern look. -->
+    <NoWarn>$(NoWarn);WPF0001</NoWarn>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- WinForms is only here for the tray icon; keep its names (Application, MessageBox...) out of the way of WPF's. -->
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+    <!-- WPF leaves System.IO out (its Path clashes with the Path shape, which this app does not use). -->
+    <Using Include="System.IO" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\app.ico" />
+    <Resource Include="Assets\logo.png" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\OnedriveBackuper.Core\OnedriveBackuper.Core.csproj" />
