@@ -80,7 +80,7 @@ public static class BackupJob
         {
             var drive = Path.GetPathRoot(Path.GetFullPath(backupRoot));
             // A missing drive is an unplugged disk or an offline network share: never create a backup folder somewhere else instead.
-            if (settings.LastRun?.SetId != null || drive == null || !Directory.Exists(drive))
+            if (drive == null || !Directory.Exists(drive))
             {
                 return Failed(log, "The backup folder is not available",
                     $"{backupRoot} could not be found. If it is on a USB disk or network drive, connect it and try again.");
